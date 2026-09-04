@@ -75,13 +75,8 @@ Dos flags:
 - `--debug` imprime los prompts completos que se enviaron a cada modelo.
 - `--romper-sql` daña el primer SQL a propósito para ver el loop de reflection funcionando.
 
-```bash
-python main.py --romper-sql "¿Radio promedio de los planetas descubiertos por TESS?"
-```
+### Preguntas probadas
 
-### Preguntas que ya están probadas
-
-Sirven para el demo en vivo, cada una ejercita una parte distinta:
 
 | pregunta | qué muestra |
 |---|---|
@@ -91,12 +86,6 @@ Sirven para el demo en vivo, cada una ejercita una parte distinta:
 | ¿Radio promedio de los planetas descubiertos por TESS? | los valores de ejemplo salvando el filtro de texto, 6.04 sobre 933 planetas |
 | ¿Qué planetas tienen mayor diferencia entre el radio máximo y mínimo publicado? | `mediciones` gana el ranking, y el Analyst avisa que el resultado es basura |
 | ¿Quién ganó el mundial de 2022? | el SQL Agent rechaza, la reflection amplía el esquema, y nadie inventa nada |
-
-Y los checks, que corren sin llave y sin internet:
-
-```bash
-python test_pipeline.py
-```
 
 ## Por qué cada paso existe
 
@@ -160,10 +149,6 @@ desglose, dice el desglose y aclara que el total no se calculó.
 
 ## Cuatro cosas que se rompieron al probarlo
 
-Ninguna se encontró leyendo el código. Salieron de correr el agente contra preguntas reales. Las
-tres primeras son el mismo error de fondo: darle a un modelo un trabajo que le queda grande. La
-cuarta no es un error del agente.
-
 **1. El agente no sabía cómo se escriben los valores.** Preguntando por el radio promedio de los
 planetas de TESS, escribió `instalacion_descubrimiento = 'TESS'`. La base guarda
 `'Transiting Exoplanet Survey Satellite (TESS)'`. Cero filas, y la reflection reintentó a ciegas
@@ -205,30 +190,16 @@ fuente heterogénea. Los datos de la NASA no se tocan, se documentan: el Analyst
 de avisar cuando un valor es físicamente absurdo para su unidad y cuando el estadístico pedido es
 sensible a valores extremos, que es justo el trabajo que uno espera de un analista.
 
-## Guion de la exposición, 30 minutos
-
-| min | tema |
-|---|---|
-| 0-3 | El problema y los datos: 6360 exoplanetas bajados con SQL del archivo de la NASA |
-| 3-6 | Por qué no una sola llamada al modelo: el esquema no cabe y el SQL malo pasa silencioso |
-| 6-10 | Pasos 1 y 2: Planner y búsqueda semántica, con los puntajes de coseno en pantalla |
-| 10-16 | Pasos 3 y 4: SQL Agent, los valores de ejemplo, y los guardarraíles de ejecución |
-| 16-22 | Paso 5: reflection en vivo con `--romper-sql` |
-| 22-26 | Lo que se rompió al probarlo, sobre todo el literal colado y el `MAX - MIN` |
-| 26-30 | Paso 6: Analyst, y OpenRouter cambiando el modelo de un rol con una variable de entorno |
-
-## Fuera de alcance, a propósito
+## Fuera de alcance
 
 - Memoria entre preguntas. Cada corrida arranca de cero.
 - Cache de los embeddings del catálogo. Con tres tablas es una llamada barata; vale la pena cuando
   el catálogo pase de unas cincuenta tablas.
 - Un juez LLM en la validación. Los checks deterministas cubren los fallos que de verdad ocurren.
-- pytest, CI, Docker. `test_pipeline.py` son asserts que corren con `python test_pipeline.py`.
 - Que el agente consulte el TAP de la NASA en vivo. Apunta a SQLite local porque ese es el caso
-  realista, una base interna de la empresa.
+  realista.
 
 ## Nota sobre la llave
 
 `.env` está en `.gitignore` y nunca se commitea. Lo único que viaja al repo es `.env.example` con
-los nombres de las variables. Antes de cualquier push conviene confirmar que `git status` no lista
-`.env`.
+los nombres de las variables.
