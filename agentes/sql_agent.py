@@ -19,6 +19,10 @@ def limpiar_sql(texto):
     return sin_cercas.strip().rstrip(";").strip()
 
 
+def parece_sql(texto):
+    return texto.lower().startswith(("select", "with"))
+
+
 def escribir_sql(pregunta, plan, esquema, sql_previo=None, error_previo=None):
     partes = [
         f"Pregunta: {pregunta}",

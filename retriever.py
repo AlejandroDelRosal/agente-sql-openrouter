@@ -25,9 +25,11 @@ CATALOGO = [
     {
         "nombre": "mediciones",
         "descripcion": (
-            "valores publicados por distintos papers para el mismo planeta desde 2020, con la "
-            "fecha de publicacion y el observatorio, sirve para comparar mediciones repetidas, "
-            "ver dispersion entre fuentes o contar cuantas publicaciones tiene un planeta"
+            "valores publicados por distintos papers para el mismo planeta desde 2020: el radio, "
+            "la masa y el periodo tal como los reporto cada publicacion, con su fecha y el "
+            "observatorio. Sirve para comparar mediciones repetidas del mismo planeta, ver el "
+            "maximo, el minimo y la dispersion entre fuentes, o contar cuantas publicaciones "
+            "tiene cada planeta"
         ),
     },
 ]

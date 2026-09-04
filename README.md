@@ -79,6 +79,19 @@ Dos flags:
 python main.py --romper-sql "¿Radio promedio de los planetas descubiertos por TESS?"
 ```
 
+### Preguntas que ya están probadas
+
+Sirven para el demo en vivo, cada una ejercita una parte distinta:
+
+| pregunta | qué muestra |
+|---|---|
+| ¿Cuántos planetas tiene TRAPPIST-1? | el camino feliz, una tabla, respuesta verificada en 7 |
+| ¿Cuántos exoplanetas se descubrieron por tránsito cada año desde 2015? | agregación por año, y el Analyst citando sin sumar |
+| ¿Qué tipo espectral tienen las estrellas de los planetas más cercanos a 10 parsecs? | la búsqueda semántica trae dos tablas y el SQL Agent hace el join |
+| ¿Radio promedio de los planetas descubiertos por TESS? | los valores de ejemplo salvando el filtro de texto, 6.04 sobre 933 planetas |
+| ¿Qué planetas tienen mayor diferencia entre el radio máximo y mínimo publicado? | `mediciones` gana el ranking, y el Analyst avisa que el resultado es basura |
+| ¿Quién ganó el mundial de 2022? | el SQL Agent rechaza, la reflection amplía el esquema, y nadie inventa nada |
+
 Y los checks, que corren sin llave y sin internet:
 
 ```bash
@@ -116,10 +129,12 @@ create table exoplanetas ( ... )
 El umbral de 500 es lo que deja fuera a `nombre` y `estrella`, que son casi identificadores únicos
 y no aportarían nada. Con el comentario puesto, la misma pregunta sale bien al primer intento.
 
-**Ejecución.** El agente no es confiable, así que la base se defiende: conexión `mode=ro`, solo se
-aceptan sentencias que empiezan con `select` o `with`, se rechaza cualquier `;` intermedio para
-cortar sentencias encadenadas, y se fuerza un `limit 200` si la consulta no trae uno. Los errores
-de SQLite se devuelven en vez de lanzarse, porque son el insumo del paso siguiente.
+**Ejecución.** El agente no es confiable, así que la base se defiende. Cuatro reglas en
+`db.ejecutar_select`: conexión `mode=ro`, solo sentencias que empiezan con `select` o `with`, se
+rechaza cualquier `;` intermedio para cortar sentencias encadenadas, y se rechaza una consulta sin
+`from`, porque una consulta que no lee ninguna tabla no está consultando nada. Además se fuerza un
+`limit 200` si la consulta no trae uno. Los errores de SQLite se devuelven en vez de lanzarse,
+porque son el insumo del paso siguiente.
 
 **Validación / reflection.** Es el patrón central del ejemplo. Los checks son deterministas y sin
 LLM: hubo error de SQLite, vinieron cero filas, o todo vino en `NULL`. Si algo falla, el motivo
@@ -128,10 +143,67 @@ misma función `escribir_sql`, solo cambia que ahora recibe el error anterior. U
 sería más lento, más caro y taparía que estos tres checks atrapan la gran mayoría de los fallos
 reales.
 
+Dos detalles del loop que no son obvios:
+
+- Si el error es `no such table`, el reintento no vuelve contra las mismas tablas: agrega la
+  siguiente mejor del ranking al esquema. La reflection puede pedir más contexto, no solo corregir
+  sintaxis.
+- Si el SQL Agent responde en prosa en vez de SQL, eso es un rechazo, no un error, y el loop se
+  corta ahí mismo. Por qué importa está abajo.
+
 **Analyst.** Redacta con las filas ya obtenidas y no toca la base. Separarlo del SQL Agent importa
 porque son dos habilidades distintas: escribir SQL correcto y explicar un número sin inventar
 otros. Si la validación falló después de los tres intentos, se le dice, y contesta que no se pudo
-responder en vez de improvisar una cifra.
+responder en vez de improvisar una cifra. Tiene prohibido calcular: los números que escribe deben
+aparecer literalmente en las filas. Si la pregunta pide un total y la consulta devolvió un
+desglose, dice el desglose y aclara que el total no se calculó.
+
+## Cuatro cosas que se rompieron al probarlo
+
+Ninguna se encontró leyendo el código. Salieron de correr el agente contra preguntas reales. Las
+tres primeras son el mismo error de fondo: darle a un modelo un trabajo que le queda grande. La
+cuarta no es un error del agente.
+
+**1. El agente no sabía cómo se escriben los valores.** Preguntando por el radio promedio de los
+planetas de TESS, escribió `instalacion_descubrimiento = 'TESS'`. La base guarda
+`'Transiting Exoplanet Survey Satellite (TESS)'`. Cero filas, y la reflection reintentó a ciegas
+tres veces porque no puede adivinar una cadena que nunca vio. Arreglo: mostrarle los valores más
+frecuentes de cada columna de texto junto al DDL. La respuesta correcta, 6.04 radios terrestres
+sobre 933 planetas, sale al primer intento.
+
+**2. La respuesta inventada se colaba por el canal de los datos.** Preguntando quién ganó el
+mundial de 2022, el SQL Agent contestó en prosa que la base no tiene esa información, y de paso que
+había ganado Argentina. El guardarraíl rechazó la prosa, la reflection lo acorraló, y en el
+tercer intento produjo esto:
+
+```sql
+SELECT 'Argentina' AS ganador_mundial_2022 FROM exoplanetas LIMIT 1
+```
+
+Consulta válida, una fila, validación en ok, y el Analyst reportó que Argentina ganó el mundial
+como si fuera un dato de la base. Ningún guardarraíl SQL puede arreglarlo, porque SQL permite
+seleccionar constantes y no hay forma de distinguir un literal de un dato leído. El arreglo es de
+diseño: una respuesta en prosa del SQL Agent es un rechazo legítimo, no un error, así que el loop
+se corta en el primer intento y nunca se lo acorrala. De paso ahorra dos llamadas al modelo caro.
+
+**3. El Analyst sumaba mal.** Con las 12 filas del conteo por año en la mano, reportó 3.538
+planetas en una corrida y 4.161 en otra. El total real es 3537. Sumar doce números es exactamente
+lo que un LLM hace mal y lo que una base de datos hace bien, así que ahora tiene prohibido
+calcular: solo puede citar números que estén literalmente en las filas. Si hace falta un total, lo
+calcula el `SELECT`.
+
+**4. Y una que no es un bug.** Preguntando qué planetas tienen más diferencia entre el radio
+máximo y mínimo publicado, el agente escribió la consulta correcta, con `HAVING COUNT(*) > 1` y
+todo, y devolvió Kepler-1999 b con una diferencia de 4279 radios terrestres. Ese valor está de
+verdad en el archivo de la NASA: sale del catálogo automatizado Q1-Q17 DR24 de candidatos Kepler,
+con un ajuste malo. Los dos papers arbitrados del mismo planeta dicen 3.29 y 3.55.
+
+O sea que el pipeline funcionó y la respuesta es basura. `MAX - MIN` es el estadístico menos
+robusto que existe, y la tabla `mediciones` mezcla papers arbitrados con catálogos automatizados
+superados. No hay arquitectura de agentes que salve de pedir un estadístico no robusto sobre una
+fuente heterogénea. Los datos de la NASA no se tocan, se documentan: el Analyst tiene instrucciones
+de avisar cuando un valor es físicamente absurdo para su unidad y cuando el estadístico pedido es
+sensible a valores extremos, que es justo el trabajo que uno espera de un analista.
 
 ## Guion de la exposición, 30 minutos
 
@@ -142,8 +214,8 @@ responder en vez de improvisar una cifra.
 | 6-10 | Pasos 1 y 2: Planner y búsqueda semántica, con los puntajes de coseno en pantalla |
 | 10-16 | Pasos 3 y 4: SQL Agent, los valores de ejemplo, y los guardarraíles de ejecución |
 | 16-22 | Paso 5: reflection en vivo con `--romper-sql` |
-| 22-26 | Paso 6: Analyst, y por qué el que redacta no toca la base |
-| 26-30 | OpenRouter: cambiar el modelo de un rol con una variable de entorno, y el costo por corrida |
+| 22-26 | Lo que se rompió al probarlo, sobre todo el literal colado y el `MAX - MIN` |
+| 26-30 | Paso 6: Analyst, y OpenRouter cambiando el modelo de un rol con una variable de entorno |
 
 ## Fuera de alcance, a propósito
 
@@ -155,13 +227,8 @@ responder en vez de improvisar una cifra.
 - Que el agente consulte el TAP de la NASA en vivo. Apunta a SQLite local porque ese es el caso
   realista, una base interna de la empresa.
 
-## Publicar
+## Nota sobre la llave
 
-```bash
-git init -b main
-git add .
-git commit -m "Pipeline agentico Planner, SQL Agent y Analyst sobre OpenRouter"
-gh repo create agente-sql-openrouter --public --source=. --push
-```
-
-`git status` no debe listar `.env` antes de hacer push: la llave se queda en tu máquina.
+`.env` está en `.gitignore` y nunca se commitea. Lo único que viaja al repo es `.env.example` con
+los nombres de las variables. Antes de cualquier push conviene confirmar que `git status` no lista
+`.env`.

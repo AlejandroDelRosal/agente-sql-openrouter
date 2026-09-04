@@ -132,6 +132,10 @@ def ejecutar_select(sql, archivo=ARCHIVO):
         return None, None, "rechazado: solo se permite una sentencia por consulta"
     if not limpio.lower().startswith(("select", "with")):
         return None, None, "rechazado: solo se permiten consultas SELECT"
+    # sin FROM la consulta no lee datos: es la via por la que el modelo cuela una respuesta
+    # inventada como literal, del tipo select 'la respuesta es 42'
+    if not re.search(r"\bfrom\b", limpio, re.IGNORECASE):
+        return None, None, "rechazado: la consulta no lee ninguna tabla"
     try:
         # mode=ro es la garantia real de que el agente no puede escribir en la base
         conexion = sqlite3.connect(f"file:{archivo}?mode=ro", uri=True)

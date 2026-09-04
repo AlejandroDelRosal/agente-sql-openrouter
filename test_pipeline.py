@@ -45,6 +45,7 @@ def test_guardarrailes(ruta):
         "update exoplanetas set nombre = 'x'",
         "drop table estrellas",
         "select 1; drop table estrellas",
+        "select 'la respuesta es 42' as mensaje",
     ]:
         _, _, error = db.ejecutar_select(sql, ruta)
         assert error.startswith("rechazado"), sql
@@ -105,6 +106,13 @@ def test_limpiar_sql():
     assert sql_agent.limpiar_sql("```sql\nselect 1;\n```") == "select 1"
 
 
+def test_parece_sql():
+    assert sql_agent.parece_sql("select 1 from t")
+    assert sql_agent.parece_sql("with x as (select 1) select * from x")
+    # una negativa en prosa no es un error de SQL que convenga reintentar
+    assert not sql_agent.parece_sql("Lo siento, no puedo responder eso con estas tablas.")
+
+
 def test_reflection_se_dispara(ruta):
     roto = main.romper("select nombre from exoplanetas")
     _, _, error = db.ejecutar_select(roto, ruta)
@@ -122,5 +130,6 @@ if __name__ == "__main__":
     test_busqueda_semantica()
     test_validacion()
     test_limpiar_sql()
+    test_parece_sql()
     test_reflection_se_dispara(ruta)
     print("todo bien")
