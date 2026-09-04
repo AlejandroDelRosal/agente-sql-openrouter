@@ -189,49 +189,6 @@ a 41, por eso va en un `requirements` aparte y `main.py` sigue corriendo solo co
 No se usó el cliente de modelos de LangChain: `ChatOpenAI` taparía el `response_format` del
 Planner, que es justo lo que conviene mostrar.
 
-## Cuatro cosas que se rompieron al probarlo
-
-**1. El agente no sabía cómo se escriben los valores.** Preguntando por el radio promedio de los
-planetas de TESS, escribió `instalacion_descubrimiento = 'TESS'`. La base guarda
-`'Transiting Exoplanet Survey Satellite (TESS)'`. Cero filas, y la reflection reintentó a ciegas
-tres veces porque no puede adivinar una cadena que nunca vio. Arreglo: mostrarle los valores más
-frecuentes de cada columna de texto junto al DDL. La respuesta correcta, 6.04 radios terrestres
-sobre 933 planetas, sale al primer intento.
-
-**2. La respuesta inventada se colaba por el canal de los datos.** Preguntando quién ganó el
-mundial de 2022, el SQL Agent contestó en prosa que la base no tiene esa información, y de paso que
-había ganado Argentina. El guardarraíl rechazó la prosa, la reflection lo acorraló, y en el
-tercer intento produjo esto:
-
-```sql
-SELECT 'Argentina' AS ganador_mundial_2022 FROM exoplanetas LIMIT 1
-```
-
-Consulta válida, una fila, validación en ok, y el Analyst reportó que Argentina ganó el mundial
-como si fuera un dato de la base. Ningún guardarraíl SQL puede arreglarlo, porque SQL permite
-seleccionar constantes y no hay forma de distinguir un literal de un dato leído. El arreglo es de
-diseño: una respuesta en prosa del SQL Agent es un rechazo legítimo, no un error, así que el loop
-se corta en el primer intento y nunca se lo acorrala. De paso ahorra dos llamadas al modelo caro.
-
-**3. El Analyst sumaba mal.** Con las 12 filas del conteo por año en la mano, reportó 3.538
-planetas en una corrida y 4.161 en otra. El total real es 3537. Sumar doce números es exactamente
-lo que un LLM hace mal y lo que una base de datos hace bien, así que ahora tiene prohibido
-calcular: solo puede citar números que estén literalmente en las filas. Si hace falta un total, lo
-calcula el `SELECT`.
-
-**4. Y una que no es un bug.** Preguntando qué planetas tienen más diferencia entre el radio
-máximo y mínimo publicado, el agente escribió la consulta correcta, con `HAVING COUNT(*) > 1` y
-todo, y devolvió Kepler-1999 b con una diferencia de 4279 radios terrestres. Ese valor está de
-verdad en el archivo de la NASA: sale del catálogo automatizado Q1-Q17 DR24 de candidatos Kepler,
-con un ajuste malo. Los dos papers arbitrados del mismo planeta dicen 3.29 y 3.55.
-
-O sea que el pipeline funcionó y la respuesta es basura. `MAX - MIN` es el estadístico menos
-robusto que existe, y la tabla `mediciones` mezcla papers arbitrados con catálogos automatizados
-superados. No hay arquitectura de agentes que salve de pedir un estadístico no robusto sobre una
-fuente heterogénea. Los datos de la NASA no se tocan, se documentan: el Analyst tiene instrucciones
-de avisar cuando un valor es físicamente absurdo para su unidad y cuando el estadístico pedido es
-sensible a valores extremos, que es justo el trabajo que uno espera de un analista.
-
 ## Fuera de alcance
 
 - Memoria entre preguntas. Cada corrida arranca de cero.
