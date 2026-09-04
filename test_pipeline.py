@@ -4,6 +4,11 @@ import tempfile
 import db
 import llm
 import main
+
+try:
+    import grafo
+except ImportError:
+    grafo = None
 import retriever
 import validacion
 from agentes import sql_agent
@@ -120,6 +125,26 @@ def test_reflection_se_dispara(ruta):
     assert validacion.revisar(None, error)[0] is False
 
 
+def test_rutas_del_grafo():
+    base = {"puntajes": [(0.6, "a"), (0.5, "b"), (0.4, "c")], "elegidas": ["a", "b"], "intento": 1}
+
+    # con SQL valido siempre se va a ejecutar, sin importar el resto del estado
+    assert grafo.ruta_despues_de_escribir({**base, "sql": "select 1 from t"}) == "ejecutar"
+    # un rechazo en prosa amplia el esquema mientras queden tablas, y despues se rinde
+    assert grafo.ruta_despues_de_escribir({**base, "sql": "no puedo"}) == "ampliar_esquema"
+    sin_tablas = {**base, "elegidas": ["a", "b", "c"], "sql": "no puedo", "motivo": "rechazo"}
+    assert grafo.ruta_despues_de_escribir(sin_tablas) == "analizar"
+
+    assert grafo.ruta_despues_de_validar({**base, "ok": True, "motivo": "ok"}) == "analizar"
+    fallo = {**base, "ok": False, "motivo": "no such column: x"}
+    assert grafo.ruta_despues_de_validar(fallo) == "escribir_sql"
+    falta_tabla = {**base, "ok": False, "motivo": "no such table: mediciones"}
+    assert grafo.ruta_despues_de_validar(falta_tabla) == "ampliar_esquema"
+    # agotados los intentos se pasa al Analyst aunque siga fallando
+    agotado = {**base, "ok": False, "motivo": "no such column: x", "intento": 3}
+    assert grafo.ruta_despues_de_validar(agotado) == "analizar"
+
+
 if __name__ == "__main__":
     ruta = base_de_prueba()
     test_limite()
@@ -131,5 +156,9 @@ if __name__ == "__main__":
     test_validacion()
     test_limpiar_sql()
     test_parece_sql()
+    if grafo:
+        test_rutas_del_grafo()
+    else:
+        print("langgraph no esta instalado, se salta el test del grafo")
     test_reflection_se_dispara(ruta)
     print("todo bien")
