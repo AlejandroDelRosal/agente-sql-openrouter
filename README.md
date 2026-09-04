@@ -17,6 +17,9 @@ respuesta
 Los tres agentes y los embeddings salen de OpenRouter con una sola llave. Cada rol usa un modelo
 distinto, definido por variable de entorno.
 
+El pipeline se puede correr de dos formas, con los mismos agentes: `main.py` lo orquesta a mano y
+`grafo.py` lo orquesta con LangGraph. La comparación está más abajo.
+
 ## Los datos son reales
 
 La base se construye con tres consultas SQL al servicio TAP del
@@ -46,6 +49,7 @@ Dos cosas que la base enseña sola:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-langgraph.txt   # opcional, solo para grafo.py
 cp .env.example .env      # y pega tu llave de OpenRouter en OPENROUTER_API_KEY
 python db.py              # baja los datos y arma exoplanetas.db, una sola vez
 python main.py "¿Cuántos exoplanetas se descubrieron por tránsito cada año desde 2015?"
@@ -158,6 +162,44 @@ responder en vez de improvisar una cifra. Tiene prohibido calcular: los números
 aparecer literalmente en las filas. Si la pregunta pide un total y la consulta devolvió un
 desglose, dice el desglose y aclara que el total no se calculó.
 
+## El mismo agente con LangGraph
+
+`main.py` orquesta a mano, con un `for` y un par de `if`. `grafo.py` hace lo mismo con
+[LangGraph](https://github.com/langchain-ai/langgraph) y los cinco agentes entran sin cambios,
+porque ya eran funciones que reciben y devuelven diccionarios. La salida por consola es idéntica.
+
+```bash
+pip install -r requirements-langgraph.txt
+python grafo.py "¿Cuántos planetas tiene TRAPPIST-1?"
+python grafo.py --diagrama
+```
+
+`--diagrama` imprime el grafo, no lo dibujé a mano. Las flechas punteadas son las dos únicas
+decisiones del pipeline:
+
+```mermaid
+graph TD;
+    inicio([inicio]) --> planificar;
+    planificar --> buscar;
+    buscar --> escribir_sql;
+    escribir_sql -.-> ejecutar;
+    escribir_sql -.-> ampliar_esquema;
+    escribir_sql -.-> analizar;
+    ampliar_esquema --> escribir_sql;
+    ejecutar --> validar;
+    validar -.-> analizar;
+    validar -.-> ampliar_esquema;
+    validar -.-> escribir_sql;
+    analizar --> fin([fin]);
+```
+
+Aporta un estado explícito en un `TypedDict`, las dos decisiones como funciones con nombre que se
+testean sin llamar a ningún modelo, y el diagrama salido del código. Cuesta pasar de 1 dependencia
+a 41, por eso va en un `requirements` aparte y `main.py` sigue corriendo solo con `requests`.
+
+No se usó el cliente de modelos de LangChain: `ChatOpenAI` taparía el `response_format` del
+Planner, que es justo lo que conviene mostrar.
+
 ## Cuatro cosas que se rompieron al probarlo
 
 Ninguna se encontró leyendo el código. Salieron de correr el agente contra preguntas reales. Las
@@ -215,7 +257,7 @@ sensible a valores extremos, que es justo el trabajo que uno espera de un analis
 | 10-16 | Pasos 3 y 4: SQL Agent, los valores de ejemplo, y los guardarraíles de ejecución |
 | 16-22 | Paso 5: reflection en vivo con `--romper-sql` |
 | 22-26 | Lo que se rompió al probarlo, sobre todo el literal colado y el `MAX - MIN` |
-| 26-30 | Paso 6: Analyst, y OpenRouter cambiando el modelo de un rol con una variable de entorno |
+| 26-30 | El mismo agente en LangGraph, el grafo dibujado, y OpenRouter cambiando el modelo de un rol con una variable de entorno |
 
 ## Fuera de alcance, a propósito
 
